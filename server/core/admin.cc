@@ -111,6 +111,7 @@ static bool send_cors_preflight_request(MHD_Connection* connection, const std::s
                 MHD_create_response_from_buffer(0, (void*)"", MHD_RESPMEM_PERSISTENT);
 
             MHD_add_response_header(response, "Access-Control-Allow-Origin", headers["Origin"].c_str());
+            MHD_add_response_header(response, "Vary", "Origin");
 
             if (headers.count("Access-Control-Request-Headers"))
             {
