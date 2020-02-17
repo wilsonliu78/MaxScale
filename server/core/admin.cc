@@ -19,6 +19,8 @@
 #include <climits>
 #include <new>
 #include <fstream>
+#include <unordered_map>
+
 #include <microhttpd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -33,6 +35,7 @@
 #include <maxscale/clock.h>
 #include <maxscale/http.hh>
 #include <maxscale/adminusers.hh>
+#include <maxscale/paths.h>
 
 #include "internal/resource.hh"
 
@@ -51,6 +54,7 @@ static struct ThisUnit
     bool               using_ssl = false;
     bool               log_daemon_errors = true;
 
+    std::unordered_map<std::string, std::string> files;
 } this_unit;
 
 int kv_iter(void* cls,
@@ -214,6 +218,16 @@ std::string load_file(const std::string& file)
     return ss.str();
 }
 
+std::string get_file(const std::string& file)
+{
+    if (this_unit.files.find(file) == this_unit.files.end())
+    {
+        this_unit.files[file] = load_file(file);
+    }
+
+    return this_unit.files[file];
+}
+
 static bool load_ssl_certificates()
 {
     bool rval = true;
@@ -290,23 +304,38 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
 
     MXS_DEBUG("Request:\n%s", request.to_string().c_str());
     request.fix_api_version();
-    reply = resource_handle_request(request);
 
     string data;
 
-    json_t* js = reply.get_response();
+    std::string path = get_datadir();
+    path += "/gui/" + request.uri_segment(0, request.uri_part_count());
 
-    if (js)
+    if (access(path.c_str(), R_OK) == 0)
     {
-        int flags = 0;
-        string pretty = request.get_option("pretty");
+        data = get_file(path);
 
-        if (pretty == "true" || pretty.length() == 0)
+        if (!data.empty())
         {
-            flags |= JSON_INDENT(4);
+            reply = HttpResponse(MHD_HTTP_OK);
         }
+    }
+    else
+    {
+        reply = resource_handle_request(request);
+        json_t* js = reply.get_response();
 
-        data = mxs::json_dump(js, flags);
+        if (js)
+        {
+            int flags = 0;
+            string pretty = request.get_option("pretty");
+
+            if (pretty == "true" || pretty.length() == 0)
+            {
+                flags |= JSON_INDENT(4);
+            }
+
+            data = mxs::json_dump(js, flags);
+        }
     }
 
     MHD_Response* response =
