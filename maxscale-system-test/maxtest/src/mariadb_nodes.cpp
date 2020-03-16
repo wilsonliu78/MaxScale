@@ -495,6 +495,27 @@ int Mariadb_nodes::clean_iptables(int node)
                       port[node]);
 }
 
+
+void Mariadb_nodes::block_node_from_node(int src, int dest)
+{
+    std::ostringstream ss;
+
+    ss << "iptables -I OUTPUT 1 -p tcp -d " << IP[dest] << " -j DROP;"
+       << "ip6tables -I OUTPUT 1 -p tcp -d " << IP6[dest] << " -j DROP;";
+
+    ssh_node_f(src, true, "%s", ss.str().c_str());
+}
+
+void Mariadb_nodes::unblock_node_from_node(int src, int dest)
+{
+    std::ostringstream ss;
+
+    ss << "iptables -D OUTPUT -p tcp -d " << IP[dest] << " -j DROP;"
+       << "ip6tables -D OUTPUT -p tcp -d " << IP6[dest] << " -j DROP;";
+
+    ssh_node_f(src, true, "%s", ss.str().c_str());
+}
+
 std::string Mariadb_nodes::block_command(int node) const
 {
     const char FORMAT[] =

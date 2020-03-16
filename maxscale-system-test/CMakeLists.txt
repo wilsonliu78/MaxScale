@@ -1015,6 +1015,9 @@ add_test_executable(mxs2631_ignore_system_tables.cpp mxs2631_ignore_system_table
 # MXS-2878: Verify that TLS is required
 add_test_executable(mxs2878_monitor_ssl.cpp mxs2878_monitor_ssl mxs2878_monitor_ssl LABELS REPL_BACKEND)
 
+# MXS-2919: Don't use slaves that are broken when max_slave_replication_lag is configured
+add_test_executable(mxs2919_broken_slaves.cpp mxs2919_broken_slaves mxs2919_broken_slaves LABELS readwritesplit REPL_BACKEND)
+
 ############################################
 # END: Normal tests                        #
 ############################################
