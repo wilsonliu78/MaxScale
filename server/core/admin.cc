@@ -449,6 +449,7 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
     }
     else if (access(path.c_str(), R_OK) == 0)
     {
+        MXS_DEBUG("Client requested file: %s", path.c_str());
         data = get_file(path);
 
         if (!data.empty())
@@ -495,6 +496,8 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
 
     int rval = MHD_queue_response(m_connection, reply.get_code(), response);
     MHD_destroy_response(response);
+
+    MXS_DEBUG("Response: HTTP %d", reply.get_code());
 
     return rval;
 }
