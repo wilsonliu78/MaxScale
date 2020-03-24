@@ -173,7 +173,8 @@ std::string get_file(const std::string& file)
 
 std::string get_filename(const HttpRequest& request)
 {
-    std::string path = get_datadir();
+    std::string datadir = get_datadir();
+    std::string path = datadir;
     path += "/gui/";
 
     if (request.uri_part_count() == 0)
@@ -184,6 +185,20 @@ std::string get_filename(const HttpRequest& request)
     {
         path += request.uri_segment(0, request.uri_part_count());
     }
+
+    char pathbuf[PATH_MAX + 1] = "";
+
+    if (realpath(path.c_str(), pathbuf) && access(pathbuf, R_OK) == 0
+        && strncmp(pathbuf, datadir.c_str(), datadir.length()) == 0)
+    {
+        // A valid file that's stored in the GUI directory
+        path.assign(pathbuf);
+    }
+    else
+    {
+        path.clear();
+    }
+
 
     return path;
 }
@@ -357,14 +372,14 @@ bool Client::serve_file(const std::string& url) const
 {
     bool rval = false;
     HttpRequest request(m_connection, url, MHD_HTTP_METHOD_GET, nullptr);
-    MXS_DEBUG("Request:\n%s", request.to_string().c_str());
     request.fix_api_version();
 
     std::string path = get_filename(request);
 
-    if (access(path.c_str(), R_OK) == 0)
+    if (!path.empty())
     {
         MXS_DEBUG("Client requested file: %s", path.c_str());
+        MXS_DEBUG("Request:\n%s", request.to_string().c_str());
         std::string data = get_file(path);
 
         if (!data.empty())
