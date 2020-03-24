@@ -536,7 +536,14 @@ bool Client::auth(MHD_Connection* connection, const char* url, const char* metho
     {
         auto token = get_header(MHD_HTTP_HEADER_AUTHORIZATION);
 
-        if (token.substr(0, 7) == "Bearer ")
+        if ((strcmp(url, "/") == 0 || strcmp(url, "/index.html") == 0)
+            && strcmp(method, MHD_HTTP_METHOD_GET) == 0)
+        {
+            // GET of root resource, always accept. If GUI is not installed, serves either a 200 OK for the
+            // root resource or 404 Not Found for the index.html file.
+            rval = true;
+        }
+        else if (token.substr(0, 7) == "Bearer ")
         {
             if (!auth_with_token(token.substr(7)))
             {
