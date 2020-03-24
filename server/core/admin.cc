@@ -263,6 +263,13 @@ void init_jwt_sign_key()
     this_unit.sign_key.assign((const char*)key.data(), key.size() * VALUE_SIZE);
     mxb_assert(this_unit.sign_key.size() == KEY_BITS);
 }
+
+void add_extra_headers(MHD_Response* response)
+{
+    MHD_add_response_header(response, "X-Frame-Options", "Deny");
+    MHD_add_response_header(response, "X-XSS-Protection", "1");
+    MHD_add_response_header(response, "Referrer-Policy", "same-origin");
+}
 }
 
 Client::Client(MHD_Connection* connection)
@@ -346,9 +353,56 @@ bool Client::send_cors_preflight_request(const std::string& verb)
     return rval;
 }
 
-int Client::handle(const char* url, const char* method, const char* upload_data, size_t* upload_data_size)
+bool Client::serve_file(const std::string& url) const
+{
+    bool rval = false;
+    HttpRequest request(m_connection, url, MHD_HTTP_METHOD_GET, nullptr);
+    MXS_DEBUG("Request:\n%s", request.to_string().c_str());
+    request.fix_api_version();
+
+    std::string path = get_filename(request);
+
+    if (access(path.c_str(), R_OK) == 0)
+    {
+        MXS_DEBUG("Client requested file: %s", path.c_str());
+        std::string data = get_file(path);
+
+        if (!data.empty())
+        {
+            rval = true;
+
+            MHD_Response* response =
+                MHD_create_response_from_buffer(data.size(),
+                                                (void*)data.c_str(),
+                                                MHD_RESPMEM_MUST_COPY);
+
+            if (this_unit.cors && !get_header("Origin").empty())
+            {
+                add_cors_headers(response);
+            }
+
+            add_extra_headers(response);
+
+            int rval = MHD_queue_response(m_connection, MHD_HTTP_OK, response);
+            MHD_destroy_response(response);
+        }
+        else
+        {
+            MXS_DEBUG("File not found: %s", path.c_str());
+        }
+    }
+
+    return rval;
+}
+
+int Client::handle(const std::string& url, const std::string& method,
+                   const char* upload_data, size_t* upload_data_size)
 {
     if (this_unit.cors && send_cors_preflight_request(method))
+    {
+        return MHD_YES;
+    }
+    else if (method == MHD_HTTP_METHOD_GET && serve_file(url))
     {
         return MHD_YES;
     }
@@ -361,7 +415,7 @@ int Client::handle(const char* url, const char* method, const char* upload_data,
         if (state == Client::INIT)
         {
             // First request, do authentication
-            if (!auth(m_connection, url, method))
+            if (!auth(m_connection, url.c_str(), method.c_str()))
             {
                 rval = MHD_YES;
             }
@@ -433,7 +487,6 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
     request.fix_api_version();
 
     std::string data;
-    std::string path = get_filename(request);
 
     if (request.uri_part_count() == 1 && request.uri_segment(0, 1) == "auth")
     {
@@ -446,16 +499,6 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
             .sign(jwt::algorithm::hs256 {this_unit.sign_key});
 
         reply = HttpResponse(MHD_HTTP_OK, json_pack("{s {s: s}}", "meta", "token", token.c_str()));
-    }
-    else if (access(path.c_str(), R_OK) == 0)
-    {
-        MXS_DEBUG("Client requested file: %s", path.c_str());
-        data = get_file(path);
-
-        if (!data.empty())
-        {
-            reply = HttpResponse(MHD_HTTP_OK);
-        }
     }
     else
     {
@@ -490,9 +533,7 @@ int Client::process(string url, string method, const char* upload_data, size_t* 
         add_cors_headers(response);
     }
 
-    MHD_add_response_header(response, "X-Frame-Options", "Deny");
-    MHD_add_response_header(response, "X-XSS-Protection", "1");
-    MHD_add_response_header(response, "Referrer-Policy", "same-origin");
+    add_extra_headers(response);
 
     int rval = MHD_queue_response(m_connection, reply.get_code(), response);
     MHD_destroy_response(response);
@@ -536,14 +577,7 @@ bool Client::auth(MHD_Connection* connection, const char* url, const char* metho
     {
         auto token = get_header(MHD_HTTP_HEADER_AUTHORIZATION);
 
-        if ((strcmp(url, "/") == 0 || strcmp(url, "/index.html") == 0)
-            && strcmp(method, MHD_HTTP_METHOD_GET) == 0)
-        {
-            // GET of root resource, always accept. If GUI is not installed, serves either a 200 OK for the
-            // root resource or 404 Not Found for the index.html file.
-            rval = true;
-        }
-        else if (token.substr(0, 7) == "Bearer ")
+        if (token.substr(0, 7) == "Bearer ")
         {
             if (!auth_with_token(token.substr(7)))
             {
